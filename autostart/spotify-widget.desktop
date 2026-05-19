@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Spotify Widget
+Comment=Launch Spotify with ad blocking in background
+Exec=/home/suleman/Documents/Projects/Desktop_Projects/SpotifyWidget/launcher/spotify-launcher.sh launch
+Icon=spotify
+Terminal=false
+Categories=Audio;Music;
+X-GNOME-Autostart-enabled=true
+StartupNotify=false
