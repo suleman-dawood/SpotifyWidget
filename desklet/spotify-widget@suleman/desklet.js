@@ -621,22 +621,23 @@ SpotifyWidget.prototype = {
     },
 
     _updatePosition: function() {
+        // Always try to ensure we have a valid proxy
         if (!this._playerProxy) {
-            // Try reconnecting
             this._connectDBus();
-            return;
+            if (!this._playerProxy) return;
         }
 
         try {
             let position = this._playerProxy.Position;
-            if (position !== undefined) {
+            if (position !== undefined && position !== null) {
                 this._currentPosition = position;
                 this._updateProgressBar();
                 this._setSpotifyRunning(true);
             }
         } catch (e) {
-            this._setSpotifyRunning(false);
+            // Proxy went stale — reconnect on next tick
             this._disconnectDBus();
+            this._setSpotifyRunning(false);
         }
     },
 
@@ -647,16 +648,16 @@ SpotifyWidget.prototype = {
         fraction = Math.max(0, Math.min(1, fraction));
 
         let accent = this.accentColor || "rgba(30, 215, 96, 1.0)";
-        let totalWidth = this._progressContainer.get_width();
-        if (totalWidth > 0) {
-            let fillWidth = Math.round(fraction * totalWidth);
-            this._progressBar.set_style(
-                `background-color: ${accent}; height: 4px; width: ${fillWidth}px;`
-            );
-            this._progressBg.set_style(
-                `background-color: rgba(255,255,255,0.15); height: 4px; width: ${totalWidth - fillWidth}px;`
-            );
-        }
+
+        // Use flex-like approach: set natural width ratios
+        let pct = Math.round(fraction * 1000);
+        let rem = 1000 - pct;
+        this._progressBar.set_style(
+            `background-color: ${accent}; height: 4px; min-width: ${pct > 0 ? pct : 0}px;`
+        );
+        this._progressBg.set_style(
+            `background-color: rgba(255,255,255,0.15); height: 4px; min-width: ${rem > 0 ? rem : 0}px;`
+        );
 
         // Time labels: elapsed on left, remaining on right
         this._elapsedLabel.set_text(this._formatTime(this._currentPosition));
@@ -722,7 +723,7 @@ SpotifyWidget.prototype = {
     // --- Seek ---
 
     _onProgressClicked: function(actor, event) {
-        if (!this._playerProxy || this._currentTrackLength <= 0) return;
+        if (this._currentTrackLength <= 0) return;
 
         let [x] = event.get_coords();
         let [actorX] = actor.get_transformed_position();
@@ -732,19 +733,31 @@ SpotifyWidget.prototype = {
         let fraction = Math.max(0, Math.min(1, (x - actorX) / actorWidth));
         let targetPosition = Math.floor(fraction * this._currentTrackLength);
 
-        try {
-            if (this._currentTrackId) {
-                this._playerProxy.SetPositionSync(this._currentTrackId, targetPosition);
-            } else {
-                // Fallback: relative seek
-                let offset = targetPosition - this._currentPosition;
-                this._playerProxy.SeekSync(offset);
+        // Try proxy first, fallback to dbus-send
+        let seeked = false;
+        if (this._playerProxy) {
+            try {
+                if (this._currentTrackId) {
+                    this._playerProxy.SetPositionSync(this._currentTrackId, targetPosition);
+                } else {
+                    let offset = targetPosition - this._currentPosition;
+                    this._playerProxy.SeekSync(offset);
+                }
+                seeked = true;
+            } catch (e) {
+                this._connectDBus();
             }
-            this._currentPosition = targetPosition;
-            this._updateProgressBar();
-        } catch (e) {
-            global.logError("[SpotifyWidget] Seek failed: " + e.message);
         }
+        if (!seeked) {
+            // dbus-send fallback for seek (relative offset)
+            let offset = targetPosition - this._currentPosition;
+            Util.spawnCommandLine(
+                "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify " +
+                "/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Seek int64:" + offset
+            );
+        }
+        this._currentPosition = targetPosition;
+        this._updateProgressBar();
     },
 
     // --- Volume ---
@@ -840,7 +853,6 @@ SpotifyWidget.prototype = {
         if (launcherPath) {
             Util.spawnCommandLine(launcherPath + " show");
         } else {
-            // Direct xdotool: find Spotify window by class (avoids matching VS Code etc)
             Util.spawnCommandLine(
                 "bash -c 'WID=$(xdotool search --class spotify 2>/dev/null | head -1); " +
                 "if [ -n \"$WID\" ]; then xdotool windowactivate $WID && xdotool windowfocus $WID && xdotool windowraise $WID; " +
@@ -849,12 +861,21 @@ SpotifyWidget.prototype = {
         }
     },
 
+    _hideSpotify: function() {
+        Util.spawnCommandLine(
+            "bash -c 'WID=$(xdotool search --class spotify 2>/dev/null | head -1 || " +
+            "xdotool search --name \"^Spotify\" 2>/dev/null | head -1); " +
+            "if [ -n \"$WID\" ]; then xdotool windowminimize $WID; fi'"
+        );
+    },
+
     _onLaunchSpotify: function() {
         let launcherPath = this._getLauncherPath();
         if (launcherPath) {
             Util.spawnCommandLine(launcherPath + " launch");
         } else {
-            Util.spawnCommandLine("spotify");
+            // Fallback: try flatpak first, then native
+            Util.spawnCommandLine("bash -c 'flatpak run com.spotify.Client 2>/dev/null || spotify'");
         }
 
         // Retry DBUS connection after delay
@@ -865,15 +886,15 @@ SpotifyWidget.prototype = {
     },
 
     _getLauncherPath: function() {
-        // Check user setting first
         if (this.launcherPath) {
             return this.launcherPath;
         }
 
-        // Auto-detect: look relative to desklet location
         let deskletDir = this._metadata.path;
         let candidates = [
             deskletDir + "/../../launcher/spotify-launcher.sh",
+            // Also check if symlink resolves differently
+            GLib.get_home_dir() + "/Documents/Projects/Desktop_Projects/SpotifyWidget/launcher/spotify-launcher.sh",
             GLib.get_home_dir() + "/.local/share/spotify-widget/spotify-launcher.sh",
             "/usr/local/bin/spotify-launcher.sh"
         ];
