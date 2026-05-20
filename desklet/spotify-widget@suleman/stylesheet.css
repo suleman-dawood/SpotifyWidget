@@ -1,20 +1,20 @@
-/* Spotify Widget — Vinyl Card Aesthetic
- * Matte black card with warm green accents.
- * Horizontal layout: art left, info right.
+/* Spotify Widget — Matte Card
+ * Horizontal layout: art left, info + inline controls right.
+ * Volume as vertical popup. Open Spotify as icon.
  */
 
 /* ── Main Card ── */
 .spotify-widget {
     padding: 14px;
     border-radius: 14px;
-    min-width: 320px;
+    min-width: 300px;
     border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .spotify-widget-compact {
     padding: 10px;
     border-radius: 10px;
-    min-width: 240px;
+    min-width: 220px;
     border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -39,7 +39,6 @@
     border-radius: 6px;
     width: 56px;
     height: 56px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* ── Track Info ── */
@@ -57,10 +56,10 @@
     opacity: 0.55;
 }
 
-/* ── Controls ── */
+/* ── Controls Row (prev, play, next, spacer, vol, open) ── */
 .controls-box {
-    spacing: 4px;
-    margin-top: 6px;
+    spacing: 2px;
+    margin-top: 8px;
 }
 
 .control-button {
@@ -76,9 +75,15 @@
 }
 
 .play-pause-button {
-    min-width: 38px;
-    min-height: 38px;
-    border-radius: 19px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 18px;
+}
+
+.utility-button {
+    min-width: 28px;
+    min-height: 28px;
+    border-radius: 14px;
 }
 
 /* ── Progress Bar ── */
@@ -115,50 +120,47 @@
     opacity: 0.4;
 }
 
-/* ── Volume ── */
-.volume-box {
-    margin-top: 6px;
-    spacing: 6px;
+/* ── Volume Popup (vertical slider) ── */
+.volume-popup {
+    padding: 8px 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    spacing: 4px;
+    min-width: 32px;
 }
 
 .volume-slider-container {
-    height: 3px;
+    min-height: 80px;
+    width: 4px;
     border-radius: 2px;
-    min-width: 70px;
 }
 
 .volume-slider-fill {
-    height: 3px;
-    border-radius: 2px 0 0 2px;
+    width: 4px;
+    border-radius: 0 0 2px 2px;
 }
 
 .volume-slider-bg {
-    height: 3px;
-    border-radius: 0 2px 2px 0;
+    width: 4px;
+    border-radius: 2px 2px 0 0;
 }
 
 .volume-label {
     font-size: 9px;
-    opacity: 0.4;
-    min-width: 28px;
+    opacity: 0.5;
 }
 
-/* ── Footer ── */
-.open-spotify-button {
-    margin-top: 8px;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.open-spotify-button:hover {
-    border: 1px solid rgba(255, 255, 255, 0.25);
-}
-
-/* ── Status (Spotify not running) ── */
+/* ── Status (not running) ── */
 .status-label {
     font-size: 13px;
     opacity: 0.45;
     margin-top: 16px;
+}
+
+.launch-button {
+    margin-top: 8px;
+    padding: 5px 14px;
+    border-radius: 12px;
+    font-size: 11px;
+    border: none;
 }

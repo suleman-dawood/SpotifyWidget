@@ -197,7 +197,7 @@ assert_contains "desklet.js tracks Volume in PropertiesChanged" "changed.Volume"
 
 # Stylesheet has volume styles
 STYLESHEET="$(cat "$DESKLET_DIR/stylesheet.css")"
-assert_contains "stylesheet has volume-box" "volume-box" "$STYLESHEET"
+assert_contains "stylesheet has volume-popup" "volume-popup" "$STYLESHEET"
 assert_contains "stylesheet has volume-slider-container" "volume-slider-container" "$STYLESHEET"
 assert_contains "stylesheet has progress hover" "progress-container:hover" "$STYLESHEET"
 

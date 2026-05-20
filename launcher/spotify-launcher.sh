@@ -80,9 +80,9 @@ launch_spotify() {
 }
 
 find_spotify_window() {
-    # Try class first (works reliably with Flatpak), fall back to name
-    xdotool search --class "spotify" 2>/dev/null | head -1 ||
-    xdotool search --name "Spotify" 2>/dev/null | head -1
+    # Try name first, fall back to class
+    xdotool search --name "Spotify" 2>/dev/null | head -1 ||
+    xdotool search --class "spotify" 2>/dev/null | head -1
 }
 
 hide_spotify_window() {
