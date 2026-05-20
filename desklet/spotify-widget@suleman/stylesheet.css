@@ -61,16 +61,49 @@
     border-radius: 22px;
 }
 
-/* Progress Bar */
+/* Progress Bar (seekable) */
 .progress-container {
     margin-top: 8px;
     height: 4px;
     border-radius: 2px;
+    cursor: pointer;
 }
 
 .progress-bar {
     height: 4px;
+    border-radius: 2px 0 0 2px;
+}
+
+.progress-bg {
+    height: 4px;
+    border-radius: 0 2px 2px 0;
+}
+
+.progress-container:hover {
+    height: 6px;
+}
+
+/* Volume Slider */
+.volume-box {
+    margin-top: 8px;
+    spacing: 6px;
+}
+
+.volume-slider-container {
+    height: 4px;
     border-radius: 2px;
+    min-width: 80px;
+    cursor: pointer;
+}
+
+.volume-slider-fill {
+    height: 4px;
+    border-radius: 2px 0 0 2px;
+}
+
+.volume-slider-bg {
+    height: 4px;
+    border-radius: 0 2px 2px 0;
 }
 
 /* Open Button */

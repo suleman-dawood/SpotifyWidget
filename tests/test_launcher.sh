@@ -175,6 +175,25 @@ assert_contains "desklet.js has Previous method" "Previous" "$(cat "$DESKLET_DIR
 assert_contains "desklet.js has PropertiesChanged handler" "PropertiesChanged" "$(cat "$DESKLET_DIR/desklet.js")"
 assert_contains "desklet.js has on_desklet_removed cleanup" "on_desklet_removed" "$(cat "$DESKLET_DIR/desklet.js")"
 
+# Phase 2: Seek, Volume
+echo ""
+echo "--- Phase 2: Seek + Volume ---"
+DESKLET_JS="$(cat "$DESKLET_DIR/desklet.js")"
+assert_contains "desklet.js has seek handler" "_onProgressClicked" "$DESKLET_JS"
+assert_contains "desklet.js has SetPosition for seek" "SetPositionSync" "$DESKLET_JS"
+assert_contains "desklet.js has Seek fallback" "SeekSync" "$DESKLET_JS"
+assert_contains "desklet.js has volume click handler" "_onVolumeClicked" "$DESKLET_JS"
+assert_contains "desklet.js has volume scroll handler" "_onVolumeScroll" "$DESKLET_JS"
+assert_contains "desklet.js has volume UI updater" "_updateVolumeUI" "$DESKLET_JS"
+assert_contains "desklet.js has trackId for seek" "_currentTrackId" "$DESKLET_JS"
+assert_contains "desklet.js tracks Volume in PropertiesChanged" "changed.Volume" "$DESKLET_JS"
+
+# Stylesheet has volume styles
+STYLESHEET="$(cat "$DESKLET_DIR/stylesheet.css")"
+assert_contains "stylesheet has volume-box" "volume-box" "$STYLESHEET"
+assert_contains "stylesheet has volume-slider-container" "volume-slider-container" "$STYLESHEET"
+assert_contains "stylesheet has progress hover" "progress-container:hover" "$STYLESHEET"
+
 # Test autostart desktop entry
 echo ""
 echo "=== Autostart Entry Tests ==="
