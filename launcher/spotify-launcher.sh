@@ -49,7 +49,7 @@ check_dependencies() {
 }
 
 is_spotify_running() {
-    pgrep -f 'spotify' >/dev/null 2>&1
+    pgrep -x spotify >/dev/null 2>&1 || flatpak ps 2>/dev/null | grep -q com.spotify.Client
 }
 
 launch_spotify() {
@@ -75,41 +75,59 @@ launch_spotify() {
     sleep "$HIDE_DELAY"
 }
 
+find_all_spotify_windows() {
+    # Collect from multiple sources — Flatpak Spotify creates windows under different classes
+    {
+        xdotool search --class spotify 2>/dev/null
+        wmctrl -l 2>/dev/null | grep -i "Spotify" | grep -v "SpotifyWidget" | awk '{print $1}'
+    } | sort -u
+}
+
 find_spotify_window() {
-    # Find the real Spotify window — exclude other apps with "Spotify" in title
-    # Check WM_CLASS to ensure it's actually Spotify
-    local wids
-    wids=$(xdotool search --name "Spotify" 2>/dev/null || true)
-    for wid in $wids; do
-        local wm_class
-        wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null | grep -o '"[^"]*"' | head -1 | tr -d '"')
-        if [[ "$wm_class" == "spotify" || "$wm_class" == "Spotify" ]]; then
-            echo "$wid"
-            return 0
-        fi
-    done
-    # Fallback: search by class
-    xdotool search --class "spotify" 2>/dev/null | head -1 || true
+    find_all_spotify_windows | head -1
 }
 
 hide_spotify_window() {
-    local wid
-    wid=$(find_spotify_window)
-    if [[ -n "$wid" ]]; then
-        xdotool windowminimize "$wid"
-        log "Spotify window hidden."
+    local wids found=0
+    wids=$(find_all_spotify_windows)
+    for wid in $wids; do
+        xdotool windowunmap "$wid" 2>/dev/null && found=1
+    done
+    if [[ $found -eq 1 ]]; then
+        echo "$wids" > /tmp/.spotify-widget-wids
+        log "Spotify window hidden (unmapped)."
     else
         log "WARN: Could not find Spotify window to hide."
     fi
 }
 
 show_spotify_window() {
-    local wid
-    wid=$(find_spotify_window)
-    if [[ -n "$wid" ]]; then
-        xdotool windowactivate "$wid"
-        xdotool windowfocus "$wid"
-        xdotool windowraise "$wid"
+    local found=0
+    # Remap saved windows (unmapped windows can't be found by search)
+    if [[ -f /tmp/.spotify-widget-wids ]]; then
+        while read -r wid; do
+            [[ -z "$wid" ]] && continue
+            if xprop -id "$wid" >/dev/null 2>&1; then
+                xdotool windowmap "$wid" 2>/dev/null
+                xdotool windowactivate "$wid" 2>/dev/null
+                xdotool windowfocus "$wid" 2>/dev/null
+                xdotool windowraise "$wid" 2>/dev/null
+                found=1
+            fi
+        done < /tmp/.spotify-widget-wids
+    fi
+
+    # Fallback: search for any visible spotify window
+    if [[ $found -eq 0 ]]; then
+        local wid
+        wid=$(find_spotify_window)
+        if [[ -n "$wid" ]]; then
+            xdotool windowactivate "$wid" 2>/dev/null
+            found=1
+        fi
+    fi
+
+    if [[ $found -eq 1 ]]; then
         log "Spotify window shown."
     else
         log "WARN: Could not find Spotify window to show."
