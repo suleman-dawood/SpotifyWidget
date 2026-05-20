@@ -64,12 +64,8 @@ launch_spotify() {
     log "Launching Spotify ($install_type) with ad blocking..."
 
     if [[ "$install_type" == "flatpak" ]]; then
-        # Flatpak: use --env and --filesystem to inject adblock into sandbox
-        flatpak run \
-            --env=LD_PRELOAD="$ADBLOCK_LIB" \
-            --filesystem="$(dirname "$ADBLOCK_LIB"):ro" \
-            --filesystem="$HOME/.config/spotify-adblock:ro" \
-            com.spotify.Client &
+        # Flatpak: override is set persistently, just run
+        flatpak run com.spotify.Client &
     else
         LD_PRELOAD="$ADBLOCK_LIB" spotify &
     fi
@@ -80,9 +76,20 @@ launch_spotify() {
 }
 
 find_spotify_window() {
-    # Try name first, fall back to class
-    xdotool search --name "Spotify" 2>/dev/null | head -1 ||
-    xdotool search --class "spotify" 2>/dev/null | head -1
+    # Find the real Spotify window — exclude other apps with "Spotify" in title
+    # Check WM_CLASS to ensure it's actually Spotify
+    local wids
+    wids=$(xdotool search --name "Spotify" 2>/dev/null || true)
+    for wid in $wids; do
+        local wm_class
+        wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null | grep -o '"[^"]*"' | head -1 | tr -d '"')
+        if [[ "$wm_class" == "spotify" || "$wm_class" == "Spotify" ]]; then
+            echo "$wid"
+            return 0
+        fi
+    done
+    # Fallback: search by class
+    xdotool search --class "spotify" 2>/dev/null | head -1 || true
 }
 
 hide_spotify_window() {
@@ -110,6 +117,26 @@ show_spotify_window() {
     fi
 }
 
+# Watch mode: monitor Spotify window, re-hide if it gets closed
+# This keeps Spotify running in background — closing the window just hides it
+watch_and_guard() {
+    log "Watching Spotify window (close = hide)..."
+    while is_spotify_running; do
+        local wid
+        wid=$(find_spotify_window)
+        if [[ -z "$wid" ]] && is_spotify_running; then
+            # Window gone but process alive — window was closed
+            # Wait for it to potentially reappear (some apps recreate windows)
+            sleep 1
+            if [[ -z "$(find_spotify_window)" ]] && is_spotify_running; then
+                log "Spotify window closed but still running — music continues."
+            fi
+        fi
+        sleep 2
+    done
+    log "Spotify process exited."
+}
+
 case "${1:-launch}" in
     launch)
         check_dependencies
@@ -122,6 +149,9 @@ case "${1:-launch}" in
     hide)
         hide_spotify_window
         ;;
+    watch)
+        watch_and_guard
+        ;;
     status)
         if is_spotify_running; then
             echo "running"
@@ -130,7 +160,7 @@ case "${1:-launch}" in
         fi
         ;;
     *)
-        echo "Usage: $0 {launch|show|hide|status}"
+        echo "Usage: $0 {launch|show|hide|watch|status}"
         exit 1
         ;;
 esac

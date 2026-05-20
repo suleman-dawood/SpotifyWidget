@@ -662,31 +662,35 @@ SpotifyWidget.prototype = {
 
     // --- Playback Controls ---
 
-    _onPlayPause: function() {
-        if (!this._playerProxy) return;
-        try {
-            this._playerProxy.PlayPauseSync();
-        } catch (e) {
-            global.logError("[SpotifyWidget] PlayPause failed: " + e.message);
+    _mprisCommand: function(method) {
+        // Try proxy first, fall back to dbus-send (always works)
+        if (this._playerProxy) {
+            try {
+                this._playerProxy[method + "Sync"]();
+                return;
+            } catch (e) {
+                global.logWarning("[SpotifyWidget] Proxy " + method + " failed, reconnecting: " + e.message);
+                this._disconnectDBus();
+                this._connectDBus();
+            }
         }
+        // Fallback: dbus-send always creates a fresh connection
+        Util.spawnCommandLine(
+            "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify " +
+            "/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player." + method
+        );
+    },
+
+    _onPlayPause: function() {
+        this._mprisCommand("PlayPause");
     },
 
     _onNext: function() {
-        if (!this._playerProxy) return;
-        try {
-            this._playerProxy.NextSync();
-        } catch (e) {
-            global.logError("[SpotifyWidget] Next failed: " + e.message);
-        }
+        this._mprisCommand("Next");
     },
 
     _onPrevious: function() {
-        if (!this._playerProxy) return;
-        try {
-            this._playerProxy.PreviousSync();
-        } catch (e) {
-            global.logError("[SpotifyWidget] Previous failed: " + e.message);
-        }
+        this._mprisCommand("Previous");
     },
 
     // --- Seek ---
@@ -808,11 +812,14 @@ SpotifyWidget.prototype = {
     _onOpenSpotify: function() {
         let launcherPath = this._getLauncherPath();
         if (launcherPath) {
-            // Launcher handles both show (if running) and launch (if not)
-            Util.spawnCommandLine("bash -c '" + launcherPath + " show 2>/dev/null || " + launcherPath + " launch'");
+            Util.spawnCommandLine(launcherPath + " show");
         } else {
-            // Fallback: try xdotool, then launch flatpak
-            Util.spawnCommandLine("bash -c 'WID=$(xdotool search --class spotify 2>/dev/null | head -1 || xdotool search --name Spotify 2>/dev/null | head -1); if [ -n \"$WID\" ]; then xdotool windowactivate $WID && xdotool windowraise $WID; else flatpak run com.spotify.Client 2>/dev/null || spotify; fi'");
+            // Direct xdotool: find Spotify window by class (avoids matching VS Code etc)
+            Util.spawnCommandLine(
+                "bash -c 'WID=$(xdotool search --class spotify 2>/dev/null | head -1); " +
+                "if [ -n \"$WID\" ]; then xdotool windowactivate $WID && xdotool windowfocus $WID && xdotool windowraise $WID; " +
+                "else flatpak run com.spotify.Client 2>/dev/null || spotify & fi'"
+            );
         }
     },
 
