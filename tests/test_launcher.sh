@@ -198,7 +198,7 @@ assert_contains "desklet.js tracks Volume in PropertiesChanged" "changed.Volume"
 STYLESHEET="$(cat "$DESKLET_DIR/stylesheet.css")"
 assert_contains "stylesheet has volume-row" "volume-row" "$STYLESHEET"
 assert_contains "stylesheet has volume-slider-container" "volume-slider-container" "$STYLESHEET"
-assert_contains "desklet.js has progress hover handler" "notify::hover" "$DESKLET_JS"
+assert_contains "desklet.js has kill button" "_onKillSpotify" "$DESKLET_JS"
 
 # UI layout tests
 echo ""
