@@ -25,7 +25,7 @@
         "layout": {
             "type": "section",
             "title": "Layout",
-            "keys": ["show-album-art", "widget-size"]
+            "keys": ["show-album-art", "widget-size", "widget-width"]
         },
         "general": {
             "type": "section",
@@ -69,6 +69,15 @@
             "Full": "full"
         },
         "description": "Widget size"
+    },
+    "widget-width": {
+        "type": "spinbutton",
+        "default": 320,
+        "min": 200,
+        "max": 1500,
+        "step": 10,
+        "units": "px",
+        "description": "Widget width"
     },
     "refresh-interval": {
         "type": "spinbutton",

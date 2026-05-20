@@ -94,6 +94,8 @@ SpotifyWidget.prototype = {
         this._currentVolume = 1.0;
         this._currentTrackId = "";
         this._isSeeking = false;
+        this._isRelaunching = false;
+        this._killed = false;
 
         this._bindSettings();
         this._buildUI();
@@ -112,6 +114,7 @@ SpotifyWidget.prototype = {
         this.settings.bind("font-scale", "fontScale", this._onSettingsChanged.bind(this));
         this.settings.bind("show-album-art", "showAlbumArt", this._onSettingsChanged.bind(this));
         this.settings.bind("widget-size", "widgetSize", this._onSettingsChanged.bind(this));
+        this.settings.bind("widget-width", "widgetWidth", this._onSettingsChanged.bind(this));
         this.settings.bind("refresh-interval", "refreshInterval", this._onRefreshIntervalChanged.bind(this));
         this.settings.bind("launcher-path", "launcherPath");
     },
@@ -188,8 +191,12 @@ SpotifyWidget.prototype = {
         });
 
         // Open Spotify icon button
-        this._openButton = this._createControlButton("spotify-client", 20, this._onOpenSpotify.bind(this));
+        this._openButton = this._createControlButton("spotify-client", 24, this._onOpenSpotify.bind(this));
         this._openButton.add_style_class_name("utility-button");
+
+        // Kill Spotify button (X)
+        this._killButton = this._createControlButton("window-close-symbolic", 14, this._onKillSpotify.bind(this));
+        this._killButton.add_style_class_name("utility-button");
 
         this._controlsBox.add_actor(this._prevButton);
         this._controlsBox.add_actor(this._playPauseButton);
@@ -197,6 +204,7 @@ SpotifyWidget.prototype = {
         this._controlsBox.add_actor(this._controlsSpacer);
         this._controlsBox.add_actor(this._volumeButton);
         this._controlsBox.add_actor(this._openButton);
+        this._controlsBox.add_actor(this._killButton);
 
         this._infoColumn.add_actor(this._trackTitle);
         this._infoColumn.add_actor(this._trackArtist);
@@ -250,16 +258,19 @@ SpotifyWidget.prototype = {
             x_expand: true
         });
 
+        // Progress: DrawingArea approach — container handles all events,
+        // child bar is non-reactive so clicks always hit the container
         this._progressContainer = new St.BoxLayout({
             style_class: "progress-container",
             x_expand: true,
             reactive: true,
             track_hover: true
         });
-        this._progressBar = new St.Bin({ style_class: "progress-bar" });
-        this._progressBg = new St.Bin({ style_class: "progress-bg", x_expand: true });
+        this._progressBar = new St.Bin({
+            style_class: "progress-bar",
+            reactive: false
+        });
         this._progressContainer.add_actor(this._progressBar);
-        this._progressContainer.add_actor(this._progressBg);
 
         this._progressContainer.connect("button-press-event", (actor, event) => {
             this._onProgressClicked(actor, event);
@@ -287,26 +298,10 @@ SpotifyWidget.prototype = {
         this._progressSection.add_actor(this._progressContainer);
         this._progressSection.add_actor(this._timeRow);
 
-        // ── Status (when Spotify not running) ──
-        this._statusLabel = new St.Label({
-            text: "Spotify is not running",
-            style_class: "status-label",
-            visible: false
-        });
-        this._launchButton = new St.Button({
-            label: "Launch Spotify",
-            style_class: "launch-button",
-            reactive: true,
-            visible: false
-        });
-        this._launchButton.connect("clicked", this._onLaunchSpotify.bind(this));
-
         // ── Assemble card ──
         this._container.add_actor(this._topRow);
         this._container.add_actor(this._progressSection);
         this._container.add_actor(this._volumeRow);
-        this._container.add_actor(this._statusLabel);
-        this._container.add_actor(this._launchButton);
 
         this._applyStyles();
         this.setContent(this._container);
@@ -336,8 +331,9 @@ SpotifyWidget.prototype = {
         let artSize = isCompact ? 56 : 100;
 
         // Card
+        let width = this.widgetWidth || 320;
         this._container.set_style(
-            `background-color: ${bg}; color: ${fg};`
+            `background-color: ${bg}; color: ${fg}; width: ${width}px;`
         );
         if (isCompact) {
             this._container.remove_style_class_name("spotify-widget");
@@ -371,7 +367,7 @@ SpotifyWidget.prototype = {
 
         // Progress
         this._progressContainer.set_style(
-            `height: 3px; border-radius: 2px;`
+            `height: 4px; border-radius: 2px; background-color: rgba(255,255,255,0.12);`
         );
 
         // Time labels
@@ -388,10 +384,8 @@ SpotifyWidget.prototype = {
             `color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.5; min-width: 32px;`
         );
 
-        // Launch button
-        this._launchButton.set_style(
-            `background-color: ${accent}; color: rgba(0,0,0,1); padding: 5px 14px; border-radius: 12px; font-size: ${Math.round(11 * scale)}px;`
-        );
+        // Kill button
+        this._killButton.set_style(`color: ${fg}; opacity: 0.35;`);
 
         this._albumArt.visible = this.showAlbumArt !== false;
     },
@@ -447,11 +441,17 @@ SpotifyWidget.prototype = {
     },
 
     _setSpotifyRunning: function(running) {
-        this._topRow.visible = running;
-        this._progressSection.visible = running;
-        if (!running) this._volumeRow.visible = false;
-        this._statusLabel.visible = !running;
-        this._launchButton.visible = !running;
+        if (!running && !this._killed && !this._isRelaunching) {
+            // Auto-relaunch Spotify hidden (only if not manually killed)
+            this._isRelaunching = true;
+            this._trackTitle.set_text("Launching Spotify...");
+            this._trackArtist.set_text("");
+            this._onLaunchSpotify();
+            Mainloop.timeout_add(8000, () => {
+                this._isRelaunching = false;
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     },
 
     // --- DBUS Signal Handling ---
@@ -499,22 +499,17 @@ SpotifyWidget.prototype = {
     // --- Metadata Updates ---
 
     _updateMetadata: function(metadata) {
-        // Title
         let title = this._getMetadataString(metadata, "xesam:title");
         this._trackTitle.set_text(title || "Unknown Track");
 
-        // Artist
         let artists = this._getMetadataStringArray(metadata, "xesam:artist");
         this._trackArtist.set_text(artists || "Unknown Artist");
 
-        // Track length
-        let length = this._getMetadataInt64(metadata, "mpris:length");
-        this._currentTrackLength = length;
-
-        // Track ID (for SetPosition seek)
+        this._currentTrackLength = this._getMetadataInt64(metadata, "mpris:length");
         this._currentTrackId = this._getMetadataString(metadata, "mpris:trackid");
+        this._currentPosition = 0;
+        this._updateProgressBar();
 
-        // Album art
         let artUrl = this._getMetadataString(metadata, "mpris:artUrl");
         this._updateAlbumArt(artUrl);
     },
@@ -621,45 +616,73 @@ SpotifyWidget.prototype = {
     },
 
     _updatePosition: function() {
-        // Always try to ensure we have a valid proxy
-        if (!this._playerProxy) {
-            this._connectDBus();
-            if (!this._playerProxy) return;
-        }
-
+        // Read all properties fresh via DBus Properties.GetAll
+        // (proxy caches are stale — PropertiesChanged signals unreliable with Flatpak)
         try {
-            let position = this._playerProxy.Position;
-            if (position !== undefined && position !== null) {
-                this._currentPosition = position;
-                this._updateProgressBar();
-                this._setSpotifyRunning(true);
+            let connection = Gio.DBus.session;
+            let result = connection.call_sync(
+                MPRIS_BUS_NAME,
+                MPRIS_OBJECT_PATH,
+                DBUS_PROPERTIES_IFACE,
+                "GetAll",
+                new GLib.Variant("(s)", [MPRIS_PLAYER_IFACE]),
+                null,
+                Gio.DBusCallFlags.NONE,
+                500,
+                null
+            );
+
+            let props = result.deep_unpack()[0];
+
+            // Metadata
+            let metadata = props.Metadata ? props.Metadata.deep_unpack() : null;
+            if (metadata) {
+                let trackId = "";
+                if (metadata["mpris:trackid"]) {
+                    trackId = metadata["mpris:trackid"].deep_unpack
+                        ? metadata["mpris:trackid"].deep_unpack() : String(metadata["mpris:trackid"]);
+                }
+                if (trackId && trackId !== this._currentTrackId) {
+                    this._updateMetadata(metadata);
+                }
             }
+
+            // Playback status
+            if (props.PlaybackStatus) {
+                this._updatePlaybackStatus(props.PlaybackStatus.deep_unpack());
+            }
+
+            // Position
+            if (props.Position) {
+                this._currentPosition = props.Position.deep_unpack();
+                this._updateProgressBar();
+            }
+
+            this._setSpotifyRunning(true);
         } catch (e) {
-            // Proxy went stale — reconnect on next tick
-            this._disconnectDBus();
+            // Spotify not on DBUS
             this._setSpotifyRunning(false);
         }
     },
 
     _updateProgressBar: function() {
-        if (this._currentTrackLength <= 0) return;
-
-        let fraction = this._currentPosition / this._currentTrackLength;
-        fraction = Math.max(0, Math.min(1, fraction));
+        let fraction = 0;
+        if (this._currentTrackLength > 0) {
+            fraction = this._currentPosition / this._currentTrackLength;
+            fraction = Math.max(0, Math.min(1, fraction));
+        }
 
         let accent = this.accentColor || "rgba(30, 215, 96, 1.0)";
-
-        // Use flex-like approach: set natural width ratios
-        let pct = Math.round(fraction * 1000);
-        let rem = 1000 - pct;
+        let containerWidth = this._progressContainer.get_width();
+        // Fall back to widget width setting if container not yet allocated
+        if (containerWidth <= 0) {
+            containerWidth = (this.widgetWidth || 320) - 28;
+        }
+        let fillWidth = Math.max(0, Math.round(fraction * containerWidth));
         this._progressBar.set_style(
-            `background-color: ${accent}; height: 4px; min-width: ${pct > 0 ? pct : 0}px;`
-        );
-        this._progressBg.set_style(
-            `background-color: rgba(255,255,255,0.15); height: 4px; min-width: ${rem > 0 ? rem : 0}px;`
+            `background-color: ${accent}; height: 4px; border-radius: 2px; width: ${fillWidth}px;`
         );
 
-        // Time labels: elapsed on left, remaining on right
         this._elapsedLabel.set_text(this._formatTime(this._currentPosition));
         let remaining = Math.max(0, this._currentTrackLength - this._currentPosition);
         this._remainingLabel.set_text("-" + this._formatTime(remaining));
@@ -709,6 +732,7 @@ SpotifyWidget.prototype = {
     },
 
     _onPlayPause: function() {
+        this._killed = false;
         this._mprisCommand("PlayPause");
     },
 
@@ -732,30 +756,14 @@ SpotifyWidget.prototype = {
 
         let fraction = Math.max(0, Math.min(1, (x - actorX) / actorWidth));
         let targetPosition = Math.floor(fraction * this._currentTrackLength);
+        let offset = targetPosition - this._currentPosition;
 
-        // Try proxy first, fallback to dbus-send
-        let seeked = false;
-        if (this._playerProxy) {
-            try {
-                if (this._currentTrackId) {
-                    this._playerProxy.SetPositionSync(this._currentTrackId, targetPosition);
-                } else {
-                    let offset = targetPosition - this._currentPosition;
-                    this._playerProxy.SeekSync(offset);
-                }
-                seeked = true;
-            } catch (e) {
-                this._connectDBus();
-            }
-        }
-        if (!seeked) {
-            // dbus-send fallback for seek (relative offset)
-            let offset = targetPosition - this._currentPosition;
-            Util.spawnCommandLine(
-                "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify " +
-                "/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Seek int64:" + offset
-            );
-        }
+        // Always use dbus-send — proxy seek is unreliable
+        Util.spawnCommandLine(
+            "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify " +
+            "/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Seek int64:" + offset
+        );
+
         this._currentPosition = targetPosition;
         this._updateProgressBar();
     },
@@ -849,6 +857,7 @@ SpotifyWidget.prototype = {
     // --- Window Management ---
 
     _onOpenSpotify: function() {
+        this._killed = false;
         let launcherPath = this._getLauncherPath();
         if (launcherPath) {
             Util.spawnCommandLine(launcherPath + " show");
@@ -859,6 +868,18 @@ SpotifyWidget.prototype = {
                 "else flatpak run com.spotify.Client 2>/dev/null || spotify & fi'"
             );
         }
+    },
+
+    _onKillSpotify: function() {
+        // Permanently stop auto-relaunch until user clicks play or open
+        this._killed = true;
+        Util.spawnCommandLine("bash -c 'flatpak kill com.spotify.Client 2>/dev/null; pkill -x spotify 2>/dev/null'");
+        this._disconnectDBus();
+        this._trackTitle.set_text("Not Playing");
+        this._trackArtist.set_text("");
+        this._currentPosition = 0;
+        this._currentTrackLength = 0;
+        this._updateProgressBar();
     },
 
     _hideSpotify: function() {

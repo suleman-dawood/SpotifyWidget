@@ -93,22 +93,14 @@
 }
 
 .progress-container {
-    height: 3px;
+    height: 4px;
     border-radius: 2px;
-}
-
-.progress-container:hover {
-    height: 5px;
+    background-color: rgba(255, 255, 255, 0.12);
 }
 
 .progress-bar {
-    height: 3px;
-    border-radius: 2px 0 0 2px;
-}
-
-.progress-bg {
-    height: 3px;
-    border-radius: 0 2px 2px 0;
+    height: 4px;
+    border-radius: 2px;
 }
 
 .time-row {
@@ -148,17 +140,7 @@
     min-width: 32px;
 }
 
-/* ── Status (not running) ── */
-.status-label {
-    font-size: 13px;
-    opacity: 0.45;
-    margin-top: 16px;
-}
-
-.launch-button {
-    margin-top: 8px;
-    padding: 5px 14px;
-    border-radius: 12px;
-    font-size: 11px;
-    border: none;
+/* ── Kill Button ── */
+.utility-button:last-child {
+    opacity: 0.35;
 }
