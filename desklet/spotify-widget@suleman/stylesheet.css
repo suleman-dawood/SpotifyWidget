@@ -1,6 +1,6 @@
 /* Spotify Widget — Matte Card
  * Horizontal layout: art left, info + inline controls right.
- * Volume as vertical popup. Open Spotify as icon.
+ * Volume as toggleable horizontal slider row.
  */
 
 /* ── Main Card ── */
@@ -56,7 +56,7 @@
     opacity: 0.55;
 }
 
-/* ── Controls Row (prev, play, next, spacer, vol, open) ── */
+/* ── Controls Row ── */
 .controls-box {
     spacing: 2px;
     margin-top: 8px;
@@ -81,9 +81,9 @@
 }
 
 .utility-button {
-    min-width: 28px;
-    min-height: 28px;
-    border-radius: 14px;
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: 16px;
 }
 
 /* ── Progress Bar ── */
@@ -120,34 +120,32 @@
     opacity: 0.4;
 }
 
-/* ── Volume Popup (vertical slider) ── */
-.volume-popup {
-    padding: 8px 6px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    spacing: 4px;
-    min-width: 32px;
+/* ── Volume Slider Row (horizontal, toggled by icon) ── */
+.volume-row {
+    margin-top: 6px;
+    spacing: 8px;
 }
 
 .volume-slider-container {
-    min-height: 80px;
-    width: 4px;
+    height: 4px;
     border-radius: 2px;
+    min-width: 100px;
 }
 
 .volume-slider-fill {
-    width: 4px;
-    border-radius: 0 0 2px 2px;
+    height: 4px;
+    border-radius: 2px 0 0 2px;
 }
 
 .volume-slider-bg {
-    width: 4px;
-    border-radius: 2px 2px 0 0;
+    height: 4px;
+    border-radius: 0 2px 2px 0;
 }
 
 .volume-label {
-    font-size: 9px;
+    font-size: 10px;
     opacity: 0.5;
+    min-width: 32px;
 }
 
 /* ── Status (not running) ── */

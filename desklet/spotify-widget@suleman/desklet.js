@@ -179,8 +179,8 @@ SpotifyWidget.prototype = {
 
         this._controlsSpacer = new St.Bin({ x_expand: true });
 
-        // Volume toggle button (opens popup slider)
-        this._volumeButton = this._createControlButton("audio-volume-high-symbolic", 14, this._onVolumeToggle.bind(this));
+        // Volume icon (toggles volume slider row)
+        this._volumeButton = this._createControlButton("audio-volume-high-symbolic", 16, this._onVolumeToggle.bind(this));
         this._volumeButton.add_style_class_name("utility-button");
         this._volumeButton.connect("scroll-event", (actor, event) => {
             this._onVolumeScroll(actor, event);
@@ -188,7 +188,7 @@ SpotifyWidget.prototype = {
         });
 
         // Open Spotify icon button
-        this._openButton = this._createControlButton("spotify-client", 14, this._onOpenSpotify.bind(this));
+        this._openButton = this._createControlButton("spotify-client", 20, this._onOpenSpotify.bind(this));
         this._openButton.add_style_class_name("utility-button");
 
         this._controlsBox.add_actor(this._prevButton);
@@ -198,26 +198,40 @@ SpotifyWidget.prototype = {
         this._controlsBox.add_actor(this._volumeButton);
         this._controlsBox.add_actor(this._openButton);
 
-        // Volume popup (vertical slider, hidden by default)
-        this._volumePopup = new St.BoxLayout({
-            vertical: true,
-            style_class: "volume-popup",
+        this._infoColumn.add_actor(this._trackTitle);
+        this._infoColumn.add_actor(this._trackArtist);
+        this._infoColumn.add_actor(this._controlsBox);
+
+        this._topRow.add_actor(this._albumArt);
+        this._topRow.add_actor(this._infoColumn);
+
+        // ── Volume slider row (horizontal, hidden by default) ──
+        this._volumeRow = new St.BoxLayout({
+            style_class: "volume-row",
             visible: false,
-            reactive: true
+            x_expand: true
+        });
+        this._volumeRowIcon = new St.Icon({
+            icon_name: "audio-volume-high-symbolic",
+            icon_size: 14
         });
         this._volumeSliderContainer = new St.BoxLayout({
-            vertical: true,
             style_class: "volume-slider-container",
             reactive: true,
-            track_hover: true
+            track_hover: true,
+            x_expand: true
         });
         this._volumeSliderFill = new St.Bin({ style_class: "volume-slider-fill" });
-        this._volumeSliderBg = new St.Bin({ style_class: "volume-slider-bg", y_expand: true });
-        this._volumeSliderContainer.add_actor(this._volumeSliderBg);
+        this._volumeSliderBg = new St.Bin({ style_class: "volume-slider-bg", x_expand: true });
         this._volumeSliderContainer.add_actor(this._volumeSliderFill);
+        this._volumeSliderContainer.add_actor(this._volumeSliderBg);
 
         this._volumeSliderContainer.connect("button-press-event", (actor, event) => {
             this._onVolumeClicked(actor, event);
+            return Clutter.EVENT_STOP;
+        });
+        this._volumeSliderContainer.connect("scroll-event", (actor, event) => {
+            this._onVolumeScroll(actor, event);
             return Clutter.EVENT_STOP;
         });
 
@@ -225,15 +239,9 @@ SpotifyWidget.prototype = {
             text: "100%",
             style_class: "volume-label"
         });
-        this._volumePopup.add_actor(this._volumeSliderContainer);
-        this._volumePopup.add_actor(this._volumeLabel);
-
-        this._infoColumn.add_actor(this._trackTitle);
-        this._infoColumn.add_actor(this._trackArtist);
-        this._infoColumn.add_actor(this._controlsBox);
-
-        this._topRow.add_actor(this._albumArt);
-        this._topRow.add_actor(this._infoColumn);
+        this._volumeRow.add_actor(this._volumeRowIcon);
+        this._volumeRow.add_actor(this._volumeSliderContainer);
+        this._volumeRow.add_actor(this._volumeLabel);
 
         // ── Progress section: bar + time labels ──
         this._progressSection = new St.BoxLayout({
@@ -296,7 +304,7 @@ SpotifyWidget.prototype = {
         // ── Assemble card ──
         this._container.add_actor(this._topRow);
         this._container.add_actor(this._progressSection);
-        this._container.add_actor(this._volumePopup);
+        this._container.add_actor(this._volumeRow);
         this._container.add_actor(this._statusLabel);
         this._container.add_actor(this._launchButton);
 
@@ -374,12 +382,10 @@ SpotifyWidget.prototype = {
             `color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.4;`
         );
 
-        // Volume popup
-        this._volumePopup.set_style(
-            `background-color: rgba(30, 30, 30, 0.95); border-radius: 8px; padding: 8px 6px; border: 1px solid rgba(255,255,255,0.08);`
-        );
+        // Volume row
+        this._volumeRowIcon.set_style(`color: ${fg}; opacity: 0.5;`);
         this._volumeLabel.set_style(
-            `color: ${fg}; font-size: ${Math.round(9 * scale)}px; opacity: 0.5; text-align: center;`
+            `color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.5; min-width: 32px;`
         );
 
         // Launch button
@@ -432,7 +438,7 @@ SpotifyWidget.prototype = {
     _setSpotifyRunning: function(running) {
         this._topRow.visible = running;
         this._progressSection.visible = running;
-        if (!running) this._volumePopup.visible = false;
+        if (!running) this._volumeRow.visible = false;
         this._statusLabel.visible = !running;
         this._launchButton.visible = !running;
     },
@@ -714,8 +720,8 @@ SpotifyWidget.prototype = {
     // --- Volume ---
 
     _onVolumeToggle: function() {
-        this._volumePopup.visible = !this._volumePopup.visible;
-        if (this._volumePopup.visible) {
+        this._volumeRow.visible = !this._volumeRow.visible;
+        if (this._volumeRow.visible) {
             this._updateVolumeUI();
         }
     },
@@ -729,20 +735,19 @@ SpotifyWidget.prototype = {
         let pct = Math.round(this._currentVolume * 100);
         this._volumeLabel.set_text(pct + "%");
 
-        let totalHeight = this._volumeSliderContainer.get_height();
-        if (totalHeight > 0) {
-            let fillHeight = Math.round(this._currentVolume * totalHeight);
-            let bgHeight = totalHeight - fillHeight;
+        let totalWidth = this._volumeSliderContainer.get_width();
+        if (totalWidth > 0) {
+            let fillWidth = Math.round(this._currentVolume * totalWidth);
             let accent = this.accentColor || "rgba(30, 215, 96, 1.0)";
             this._volumeSliderFill.set_style(
-                `background-color: ${accent}; width: 4px; height: ${fillHeight}px; border-radius: 0 0 2px 2px;`
+                `background-color: ${accent}; height: 4px; width: ${fillWidth}px; border-radius: 2px 0 0 2px;`
             );
             this._volumeSliderBg.set_style(
-                `background-color: rgba(255,255,255,0.15); width: 4px; height: ${bgHeight}px; border-radius: 2px 2px 0 0;`
+                `background-color: rgba(255,255,255,0.15); height: 4px; width: ${totalWidth - fillWidth}px; border-radius: 0 2px 2px 0;`
             );
         }
 
-        // Update volume button icon
+        // Update volume button icon + row icon
         let iconName;
         if (this._currentVolume <= 0) {
             iconName = "audio-volume-muted-symbolic";
@@ -755,18 +760,18 @@ SpotifyWidget.prototype = {
         }
         let volIcon = this._volumeButton.get_child();
         if (volIcon) volIcon.set_icon_name(iconName);
+        this._volumeRowIcon.set_icon_name(iconName);
     },
 
     _onVolumeClicked: function(actor, event) {
         if (!this._playerProxy) return;
 
-        // Vertical slider: top = 100%, bottom = 0%
-        let [, y] = event.get_coords();
-        let [, actorY] = actor.get_transformed_position();
-        let actorHeight = actor.get_height();
-        if (actorHeight <= 0) return;
+        let [x] = event.get_coords();
+        let [actorX] = actor.get_transformed_position();
+        let actorWidth = actor.get_width();
+        if (actorWidth <= 0) return;
 
-        let volume = Math.max(0, Math.min(1, 1 - ((y - actorY) / actorHeight)));
+        let volume = Math.max(0, Math.min(1, (x - actorX) / actorWidth));
         this._setVolume(volume);
     },
 
@@ -801,8 +806,14 @@ SpotifyWidget.prototype = {
     // --- Window Management ---
 
     _onOpenSpotify: function() {
-        // Use xdotool directly — works with both native and Flatpak Spotify
-        Util.spawnCommandLine("bash -c 'WID=$(xdotool search --name Spotify 2>/dev/null | head -1); if [ -n \"$WID\" ]; then xdotool windowactivate $WID; fi'");
+        let launcherPath = this._getLauncherPath();
+        if (launcherPath) {
+            // Launcher handles both show (if running) and launch (if not)
+            Util.spawnCommandLine("bash -c '" + launcherPath + " show 2>/dev/null || " + launcherPath + " launch'");
+        } else {
+            // Fallback: try xdotool, then launch flatpak
+            Util.spawnCommandLine("bash -c 'WID=$(xdotool search --class spotify 2>/dev/null | head -1 || xdotool search --name Spotify 2>/dev/null | head -1); if [ -n \"$WID\" ]; then xdotool windowactivate $WID && xdotool windowraise $WID; else flatpak run com.spotify.Client 2>/dev/null || spotify; fi'");
+        }
     },
 
     _onLaunchSpotify: function() {
