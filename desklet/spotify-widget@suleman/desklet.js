@@ -128,25 +128,36 @@ SpotifyWidget.prototype = {
     // --- UI Construction ---
 
     _buildUI: function() {
-        // Main container
+        // Main container — vertical card
         this._container = new St.BoxLayout({
             vertical: true,
             style_class: "spotify-widget",
             reactive: true
         });
 
+        // ── Top row: album art (left) + info column (right) ──
+        this._topRow = new St.BoxLayout({
+            vertical: false,
+            style_class: "top-row"
+        });
+
         // Album art
         this._albumArt = new St.Bin({
-            style_class: "album-art",
-            x_align: St.Align.MIDDLE
+            style_class: "album-art"
         });
         this._albumArtIcon = new St.Icon({
             icon_name: "media-optical",
-            icon_size: 120
+            icon_size: 100
         });
         this._albumArt.set_child(this._albumArtIcon);
 
-        // Track info
+        // Info column: title, artist, controls
+        this._infoColumn = new St.BoxLayout({
+            vertical: true,
+            style_class: "info-column",
+            x_expand: true
+        });
+
         this._trackTitle = new St.Label({
             text: "Not Playing",
             style_class: "track-title"
@@ -156,35 +167,42 @@ SpotifyWidget.prototype = {
             style_class: "track-artist"
         });
 
-        // Controls
+        // Controls row
         this._controlsBox = new St.BoxLayout({
-            style_class: "controls-box",
-            x_align: St.Align.MIDDLE
+            style_class: "controls-box"
         });
 
-        this._prevButton = this._createControlButton("media-skip-backward-symbolic", this._onPrevious.bind(this));
-        this._playPauseButton = this._createControlButton("media-playback-start-symbolic", this._onPlayPause.bind(this));
+        this._prevButton = this._createControlButton("media-skip-backward-symbolic", 16, this._onPrevious.bind(this));
+        this._playPauseButton = this._createControlButton("media-playback-start-symbolic", 20, this._onPlayPause.bind(this));
         this._playPauseButton.add_style_class_name("play-pause-button");
-        this._nextButton = this._createControlButton("media-skip-forward-symbolic", this._onNext.bind(this));
+        this._nextButton = this._createControlButton("media-skip-forward-symbolic", 16, this._onNext.bind(this));
 
         this._controlsBox.add_actor(this._prevButton);
         this._controlsBox.add_actor(this._playPauseButton);
         this._controlsBox.add_actor(this._nextButton);
 
-        // Seekable progress bar — click to seek
+        this._infoColumn.add_actor(this._trackTitle);
+        this._infoColumn.add_actor(this._trackArtist);
+        this._infoColumn.add_actor(this._controlsBox);
+
+        this._topRow.add_actor(this._albumArt);
+        this._topRow.add_actor(this._infoColumn);
+
+        // ── Progress section: bar + time labels ──
+        this._progressSection = new St.BoxLayout({
+            vertical: true,
+            style_class: "progress-section",
+            x_expand: true
+        });
+
         this._progressContainer = new St.BoxLayout({
             style_class: "progress-container",
             x_expand: true,
             reactive: true,
             track_hover: true
         });
-        this._progressBar = new St.Bin({
-            style_class: "progress-bar"
-        });
-        this._progressBg = new St.Bin({
-            style_class: "progress-bg",
-            x_expand: true
-        });
+        this._progressBar = new St.Bin({ style_class: "progress-bar" });
+        this._progressBg = new St.Bin({ style_class: "progress-bg", x_expand: true });
         this._progressContainer.add_actor(this._progressBar);
         this._progressContainer.add_actor(this._progressBg);
 
@@ -193,20 +211,34 @@ SpotifyWidget.prototype = {
             return Clutter.EVENT_STOP;
         });
 
-        // Position label
-        this._positionLabel = new St.Label({
-            text: "",
-            style: "font-size: 10px; opacity: 0.6; margin-top: 4px;"
+        // Time labels row: elapsed ... remaining
+        this._timeRow = new St.BoxLayout({
+            style_class: "time-row",
+            x_expand: true
         });
+        this._elapsedLabel = new St.Label({
+            text: "0:00",
+            style_class: "time-label"
+        });
+        this._timeSpacer = new St.Bin({ x_expand: true });
+        this._remainingLabel = new St.Label({
+            text: "0:00",
+            style_class: "time-label"
+        });
+        this._timeRow.add_actor(this._elapsedLabel);
+        this._timeRow.add_actor(this._timeSpacer);
+        this._timeRow.add_actor(this._remainingLabel);
 
-        // Volume slider
+        this._progressSection.add_actor(this._progressContainer);
+        this._progressSection.add_actor(this._timeRow);
+
+        // ── Volume row ──
         this._volumeBox = new St.BoxLayout({
-            style_class: "volume-box",
-            x_align: St.Align.MIDDLE
+            style_class: "volume-box"
         });
         this._volumeIcon = new St.Icon({
             icon_name: "audio-volume-high-symbolic",
-            icon_size: 14
+            icon_size: 12
         });
         this._volumeSliderContainer = new St.BoxLayout({
             style_class: "volume-slider-container",
@@ -214,13 +246,8 @@ SpotifyWidget.prototype = {
             track_hover: true,
             x_expand: true
         });
-        this._volumeSliderFill = new St.Bin({
-            style_class: "volume-slider-fill"
-        });
-        this._volumeSliderBg = new St.Bin({
-            style_class: "volume-slider-bg",
-            x_expand: true
-        });
+        this._volumeSliderFill = new St.Bin({ style_class: "volume-slider-fill" });
+        this._volumeSliderBg = new St.Bin({ style_class: "volume-slider-bg", x_expand: true });
         this._volumeSliderContainer.add_actor(this._volumeSliderFill);
         this._volumeSliderContainer.add_actor(this._volumeSliderBg);
 
@@ -235,28 +262,27 @@ SpotifyWidget.prototype = {
 
         this._volumeLabel = new St.Label({
             text: "100%",
-            style: "font-size: 10px; opacity: 0.6; min-width: 32px;"
+            style_class: "volume-label"
         });
         this._volumeBox.add_actor(this._volumeIcon);
         this._volumeBox.add_actor(this._volumeSliderContainer);
         this._volumeBox.add_actor(this._volumeLabel);
 
-        // Open Spotify button
+        // ── Open Spotify (subtle text button) ──
         this._openButton = new St.Button({
             label: "Open Spotify",
             style_class: "open-spotify-button",
-            reactive: true
+            reactive: true,
+            x_align: St.Align.MIDDLE
         });
         this._openButton.connect("clicked", this._onOpenSpotify.bind(this));
 
-        // Status label (shown when Spotify not running)
+        // ── Status (when Spotify not running) ──
         this._statusLabel = new St.Label({
             text: "Spotify is not running",
             style_class: "status-label",
             visible: false
         });
-
-        // Launch button (shown when Spotify not running)
         this._launchButton = new St.Button({
             label: "Launch Spotify",
             style_class: "open-spotify-button",
@@ -265,13 +291,9 @@ SpotifyWidget.prototype = {
         });
         this._launchButton.connect("clicked", this._onLaunchSpotify.bind(this));
 
-        // Assemble
-        this._container.add_actor(this._albumArt);
-        this._container.add_actor(this._trackTitle);
-        this._container.add_actor(this._trackArtist);
-        this._container.add_actor(this._controlsBox);
-        this._container.add_actor(this._progressContainer);
-        this._container.add_actor(this._positionLabel);
+        // ── Assemble card ──
+        this._container.add_actor(this._topRow);
+        this._container.add_actor(this._progressSection);
         this._container.add_actor(this._volumeBox);
         this._container.add_actor(this._openButton);
         this._container.add_actor(this._statusLabel);
@@ -281,14 +303,14 @@ SpotifyWidget.prototype = {
         this.setContent(this._container);
     },
 
-    _createControlButton: function(iconName, callback) {
+    _createControlButton: function(iconName, iconSize, callback) {
         let button = new St.Button({
             style_class: "control-button",
             reactive: true
         });
         let icon = new St.Icon({
             icon_name: iconName,
-            icon_size: 20
+            icon_size: iconSize
         });
         button.set_child(icon);
         button.connect("clicked", callback);
@@ -296,49 +318,72 @@ SpotifyWidget.prototype = {
     },
 
     _applyStyles: function() {
-        let bg = this.backgroundColor || "rgba(24, 24, 24, 0.85)";
-        let fg = this.fontColor || "rgba(255, 255, 255, 1.0)";
+        let bg = this.backgroundColor || "rgba(18, 18, 18, 0.92)";
+        let fg = this.fontColor || "rgba(255, 255, 255, 0.93)";
         let accent = this.accentColor || "rgba(30, 215, 96, 1.0)";
+        let fgDim = this.fontColor || "rgba(255, 255, 255, 0.45)";
         let scale = this.fontScale || 1.0;
         let isCompact = this.widgetSize === "compact";
+        let artSize = isCompact ? 56 : 100;
 
+        // Card
         this._container.set_style(
-            `background-color: ${bg}; color: ${fg}; font-size: ${Math.round(14 * scale)}px;`
+            `background-color: ${bg}; color: ${fg};`
         );
-
         if (isCompact) {
             this._container.remove_style_class_name("spotify-widget");
             this._container.add_style_class_name("spotify-widget-compact");
-            this._albumArtIcon.set_icon_size(60);
+            this._topRow.remove_style_class_name("top-row");
+            this._topRow.add_style_class_name("top-row-compact");
         } else {
             this._container.remove_style_class_name("spotify-widget-compact");
             this._container.add_style_class_name("spotify-widget");
-            this._albumArtIcon.set_icon_size(120);
+            this._topRow.remove_style_class_name("top-row-compact");
+            this._topRow.add_style_class_name("top-row");
         }
 
-        this._trackTitle.set_style(`color: ${fg}; font-size: ${Math.round(14 * scale)}px; font-weight: bold;`);
-        this._trackArtist.set_style(`color: ${fg}; font-size: ${Math.round(12 * scale)}px; opacity: 0.7;`);
+        // Album art size
+        this._albumArtIcon.set_icon_size(artSize);
 
-        this._progressContainer.set_style(
-            `background-color: rgba(255,255,255,0.15); height: 4px; border-radius: 2px; margin-top: 8px;`
+        // Track info
+        this._trackTitle.set_style(
+            `color: ${fg}; font-size: ${Math.round(15 * scale)}px; font-weight: bold;`
         );
-        this._progressBar.set_style(
-            `background-color: ${accent}; height: 4px; border-radius: 2px;`
+        this._trackArtist.set_style(
+            `color: ${fg}; font-size: ${Math.round(12 * scale)}px; opacity: 0.55;`
         );
 
+        // Controls
         this._controlsBox.get_children().forEach(function(btn) {
             btn.set_style(`color: ${fg};`);
         });
 
-        this._openButton.set_style(
-            `background-color: ${accent}; color: rgba(0,0,0,1); padding: 4px 12px; border-radius: 16px; font-size: ${Math.round(11 * scale)}px;`
-        );
-        this._launchButton.set_style(
-            `background-color: ${accent}; color: rgba(0,0,0,1); padding: 4px 12px; border-radius: 16px; font-size: ${Math.round(11 * scale)}px;`
+        // Progress
+        this._progressContainer.set_style(
+            `height: 3px; border-radius: 2px;`
         );
 
-        this._volumeIcon.set_style(`color: ${fg};`);
-        this._volumeLabel.set_style(`color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.6; min-width: 32px;`);
+        // Time labels
+        this._elapsedLabel.set_style(
+            `color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.4;`
+        );
+        this._remainingLabel.set_style(
+            `color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.4;`
+        );
+
+        // Volume
+        this._volumeIcon.set_style(`color: ${fg}; opacity: 0.5;`);
+        this._volumeLabel.set_style(
+            `color: ${fg}; font-size: ${Math.round(9 * scale)}px; opacity: 0.4; min-width: 28px;`
+        );
+
+        // Buttons — ghost style, not filled
+        this._openButton.set_style(
+            `color: ${fg}; opacity: 0.6; padding: 3px 10px; border-radius: 12px; font-size: ${Math.round(10 * scale)}px; border: 1px solid rgba(255,255,255,0.12);`
+        );
+        this._launchButton.set_style(
+            `background-color: ${accent}; color: rgba(0,0,0,1); padding: 5px 14px; border-radius: 12px; font-size: ${Math.round(11 * scale)}px;`
+        );
 
         this._albumArt.visible = this.showAlbumArt !== false;
     },
@@ -383,12 +428,8 @@ SpotifyWidget.prototype = {
     },
 
     _setSpotifyRunning: function(running) {
-        this._albumArt.visible = running && (this.showAlbumArt !== false);
-        this._trackTitle.visible = running;
-        this._trackArtist.visible = running;
-        this._controlsBox.visible = running;
-        this._progressContainer.visible = running;
-        this._positionLabel.visible = running;
+        this._topRow.visible = running;
+        this._progressSection.visible = running;
         this._volumeBox.visible = running;
         this._openButton.visible = running;
         this._statusLabel.visible = !running;
@@ -501,7 +542,7 @@ SpotifyWidget.prototype = {
 
         try {
             let isCompact = this.widgetSize === "compact";
-            let size = isCompact ? 60 : 120;
+            let size = isCompact ? 56 : 100;
 
             if (artUrl.startsWith("file://")) {
                 let filePath = artUrl.substring(7);
@@ -525,7 +566,7 @@ SpotifyWidget.prototype = {
         }
 
         // Fallback to icon
-        this._albumArtIcon.set_icon_size(this.widgetSize === "compact" ? 60 : 120);
+        this._albumArtIcon.set_icon_size(this.widgetSize === "compact" ? 56 : 100);
         this._albumArt.set_child(this._albumArtIcon);
     },
 
@@ -599,10 +640,10 @@ SpotifyWidget.prototype = {
             );
         }
 
-        // Position text
-        let posStr = this._formatTime(this._currentPosition);
-        let lenStr = this._formatTime(this._currentTrackLength);
-        this._positionLabel.set_text(posStr + " / " + lenStr);
+        // Time labels: elapsed on left, remaining on right
+        this._elapsedLabel.set_text(this._formatTime(this._currentPosition));
+        let remaining = Math.max(0, this._currentTrackLength - this._currentPosition);
+        this._remainingLabel.set_text("-" + this._formatTime(remaining));
     },
 
     _formatTime: function(microseconds) {

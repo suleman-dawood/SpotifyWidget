@@ -1,6 +1,7 @@
 #!/bin/bash
 # spotify-launcher.sh — Launch Spotify with ad blocking and hide the window
 #
+# Supports both native (apt/deb) and Flatpak Spotify installations.
 # Uses LD_PRELOAD to load spotify-adblock, then hides the Spotify window
 # so it runs as a background music player controlled via MPRIS DBUS.
 
@@ -11,9 +12,26 @@ HIDE_DELAY="${SPOTIFY_HIDE_DELAY:-3}"
 
 log() { echo "[spotify-launcher] $*"; }
 
+# Detect install type: "native", "flatpak", or ""
+detect_spotify() {
+    if command -v spotify >/dev/null 2>&1; then
+        echo "native"
+    elif flatpak list --app 2>/dev/null | grep -q com.spotify.Client; then
+        echo "flatpak"
+    else
+        echo ""
+    fi
+}
+
 check_dependencies() {
     local missing=()
-    command -v spotify >/dev/null 2>&1 || missing+=("spotify")
+    local install_type
+    install_type=$(detect_spotify)
+
+    if [[ -z "$install_type" ]]; then
+        missing+=("spotify")
+    fi
+
     command -v wmctrl >/dev/null 2>&1 || missing+=("wmctrl")
     command -v xdotool >/dev/null 2>&1 || missing+=("xdotool")
 
@@ -26,10 +44,12 @@ check_dependencies() {
         log "Run install.sh first."
         exit 1
     fi
+
+    log "Detected Spotify install: $install_type"
 }
 
 is_spotify_running() {
-    pgrep -x spotify >/dev/null 2>&1
+    pgrep -f 'spotify' >/dev/null 2>&1
 }
 
 launch_spotify() {
@@ -38,17 +58,36 @@ launch_spotify() {
         return 0
     fi
 
-    log "Launching Spotify with ad blocking..."
-    LD_PRELOAD="$ADBLOCK_LIB" spotify &
+    local install_type
+    install_type=$(detect_spotify)
+
+    log "Launching Spotify ($install_type) with ad blocking..."
+
+    if [[ "$install_type" == "flatpak" ]]; then
+        # Flatpak: use --env and --filesystem to inject adblock into sandbox
+        flatpak run \
+            --env=LD_PRELOAD="$ADBLOCK_LIB" \
+            --filesystem="$(dirname "$ADBLOCK_LIB"):ro" \
+            --filesystem="$HOME/.config/spotify-adblock:ro" \
+            com.spotify.Client &
+    else
+        LD_PRELOAD="$ADBLOCK_LIB" spotify &
+    fi
     disown
 
     log "Waiting ${HIDE_DELAY}s for Spotify window..."
     sleep "$HIDE_DELAY"
 }
 
+find_spotify_window() {
+    # Try class first (works reliably with Flatpak), fall back to name
+    xdotool search --class "spotify" 2>/dev/null | head -1 ||
+    xdotool search --name "Spotify" 2>/dev/null | head -1
+}
+
 hide_spotify_window() {
     local wid
-    wid=$(xdotool search --name "Spotify" 2>/dev/null | head -1)
+    wid=$(find_spotify_window)
     if [[ -n "$wid" ]]; then
         xdotool windowminimize "$wid"
         log "Spotify window hidden."
@@ -58,11 +97,17 @@ hide_spotify_window() {
 }
 
 show_spotify_window() {
-    wmctrl -a "Spotify" 2>/dev/null || {
+    local wid
+    wid=$(find_spotify_window)
+    if [[ -n "$wid" ]]; then
+        xdotool windowactivate "$wid"
+        xdotool windowfocus "$wid"
+        xdotool windowraise "$wid"
+        log "Spotify window shown."
+    else
         log "WARN: Could not find Spotify window to show."
         return 1
-    }
-    log "Spotify window shown."
+    fi
 }
 
 case "${1:-launch}" in
