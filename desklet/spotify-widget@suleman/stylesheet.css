@@ -1,0 +1,90 @@
+/* Spotify Widget — Default Stylesheet */
+
+.spotify-widget {
+    padding: 12px;
+    border-radius: 12px;
+    min-width: 280px;
+}
+
+.spotify-widget-compact {
+    padding: 8px;
+    border-radius: 8px;
+    min-width: 200px;
+}
+
+/* Album Art */
+.album-art {
+    border-radius: 6px;
+    width: 120px;
+    height: 120px;
+}
+
+.album-art-compact {
+    border-radius: 4px;
+    width: 60px;
+    height: 60px;
+}
+
+/* Track Info */
+.track-title {
+    font-weight: bold;
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+.track-artist {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-top: 2px;
+}
+
+/* Controls */
+.controls-box {
+    margin-top: 10px;
+    spacing: 8px;
+}
+
+.control-button {
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 18px;
+    border: none;
+}
+
+.control-button:hover {
+    opacity: 0.8;
+}
+
+.play-pause-button {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 22px;
+}
+
+/* Progress Bar */
+.progress-container {
+    margin-top: 8px;
+    height: 4px;
+    border-radius: 2px;
+}
+
+.progress-bar {
+    height: 4px;
+    border-radius: 2px;
+}
+
+/* Open Button */
+.open-spotify-button {
+    margin-top: 8px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 11px;
+    border: none;
+}
+
+/* Status */
+.status-label {
+    font-size: 13px;
+    opacity: 0.6;
+    margin-top: 20px;
+}
