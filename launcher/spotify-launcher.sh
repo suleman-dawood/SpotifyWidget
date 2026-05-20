@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-ADBLOCK_LIB="${SPOTIFY_ADBLOCK_LIB:-/usr/local/lib/spotify-adblock.so}"
+ADBLOCK_LIB="${SPOTIFY_ADBLOCK_LIB:-$HOME/.config/spotify-adblock/spotify-adblock.so}"
 HIDE_DELAY="${SPOTIFY_HIDE_DELAY:-3}"
 
 log() { echo "[spotify-launcher] $*"; }

@@ -399,6 +399,9 @@ SpotifyWidget.prototype = {
     // --- DBUS Connection ---
 
     _connectDBus: function() {
+        // Always create fresh proxies
+        this._disconnectDBus();
+
         try {
             this._playerProxy = new MprisPlayerProxy(
                 Gio.DBus.session,
@@ -412,7 +415,13 @@ SpotifyWidget.prototype = {
                 MPRIS_OBJECT_PATH
             );
 
-            // Listen for property changes (song change, play/pause)
+            // Test the connection by reading a property
+            let status = this._playerProxy.PlaybackStatus;
+            if (!status) {
+                throw new Error("No PlaybackStatus — Spotify not on DBUS");
+            }
+
+            // Connection works — listen for property changes
             this._propsSignalId = this._propsProxy.connectSignal(
                 "PropertiesChanged",
                 this._onPropertiesChanged.bind(this)
@@ -421,14 +430,16 @@ SpotifyWidget.prototype = {
             this._updateFromDBus();
             this._setSpotifyRunning(true);
         } catch (e) {
-            global.logError("[SpotifyWidget] DBUS connect failed: " + e.message);
+            // Spotify not on DBUS yet — will retry on next poll
+            this._playerProxy = null;
+            this._propsProxy = null;
             this._setSpotifyRunning(false);
         }
     },
 
     _disconnectDBus: function() {
         if (this._propsProxy && this._propsSignalId) {
-            this._propsProxy.disconnectSignal(this._propsSignalId);
+            try { this._propsProxy.disconnectSignal(this._propsSignalId); } catch(e) {}
             this._propsSignalId = 0;
         }
         this._playerProxy = null;
@@ -663,15 +674,30 @@ SpotifyWidget.prototype = {
     // --- Playback Controls ---
 
     _mprisCommand: function(method) {
-        // Try proxy first, fall back to dbus-send (always works)
+        // Try proxy first
         if (this._playerProxy) {
             try {
                 this._playerProxy[method + "Sync"]();
                 return;
             } catch (e) {
-                global.logWarning("[SpotifyWidget] Proxy " + method + " failed, reconnecting: " + e.message);
-                this._disconnectDBus();
+                // Proxy stale — reconnect
                 this._connectDBus();
+                // Try once more with fresh proxy
+                if (this._playerProxy) {
+                    try {
+                        this._playerProxy[method + "Sync"]();
+                        return;
+                    } catch (e2) { /* fall through to dbus-send */ }
+                }
+            }
+        } else {
+            // No proxy — try connecting
+            this._connectDBus();
+            if (this._playerProxy) {
+                try {
+                    this._playerProxy[method + "Sync"]();
+                    return;
+                } catch (e) { /* fall through */ }
             }
         }
         // Fallback: dbus-send always creates a fresh connection
