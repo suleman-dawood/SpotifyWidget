@@ -91,6 +91,9 @@ SpotifyWidget.prototype = {
         this._currentTrackLength = 0;
         this._currentPosition = 0;
         this._isPlaying = false;
+        this._currentVolume = 1.0;
+        this._currentTrackId = "";
+        this._isSeeking = false;
 
         this._bindSettings();
         this._buildUI();
@@ -168,21 +171,75 @@ SpotifyWidget.prototype = {
         this._controlsBox.add_actor(this._playPauseButton);
         this._controlsBox.add_actor(this._nextButton);
 
-        // Progress bar
-        this._progressContainer = new St.Bin({
+        // Seekable progress bar — click to seek
+        this._progressContainer = new St.BoxLayout({
             style_class: "progress-container",
-            x_fill: true
+            x_expand: true,
+            reactive: true,
+            track_hover: true
         });
         this._progressBar = new St.Bin({
             style_class: "progress-bar"
         });
-        this._progressContainer.set_child(this._progressBar);
+        this._progressBg = new St.Bin({
+            style_class: "progress-bg",
+            x_expand: true
+        });
+        this._progressContainer.add_actor(this._progressBar);
+        this._progressContainer.add_actor(this._progressBg);
+
+        this._progressContainer.connect("button-press-event", (actor, event) => {
+            this._onProgressClicked(actor, event);
+            return Clutter.EVENT_STOP;
+        });
 
         // Position label
         this._positionLabel = new St.Label({
             text: "",
             style: "font-size: 10px; opacity: 0.6; margin-top: 4px;"
         });
+
+        // Volume slider
+        this._volumeBox = new St.BoxLayout({
+            style_class: "volume-box",
+            x_align: St.Align.MIDDLE
+        });
+        this._volumeIcon = new St.Icon({
+            icon_name: "audio-volume-high-symbolic",
+            icon_size: 14
+        });
+        this._volumeSliderContainer = new St.BoxLayout({
+            style_class: "volume-slider-container",
+            reactive: true,
+            track_hover: true,
+            x_expand: true
+        });
+        this._volumeSliderFill = new St.Bin({
+            style_class: "volume-slider-fill"
+        });
+        this._volumeSliderBg = new St.Bin({
+            style_class: "volume-slider-bg",
+            x_expand: true
+        });
+        this._volumeSliderContainer.add_actor(this._volumeSliderFill);
+        this._volumeSliderContainer.add_actor(this._volumeSliderBg);
+
+        this._volumeSliderContainer.connect("button-press-event", (actor, event) => {
+            this._onVolumeClicked(actor, event);
+            return Clutter.EVENT_STOP;
+        });
+        this._volumeSliderContainer.connect("scroll-event", (actor, event) => {
+            this._onVolumeScroll(actor, event);
+            return Clutter.EVENT_STOP;
+        });
+
+        this._volumeLabel = new St.Label({
+            text: "100%",
+            style: "font-size: 10px; opacity: 0.6; min-width: 32px;"
+        });
+        this._volumeBox.add_actor(this._volumeIcon);
+        this._volumeBox.add_actor(this._volumeSliderContainer);
+        this._volumeBox.add_actor(this._volumeLabel);
 
         // Open Spotify button
         this._openButton = new St.Button({
@@ -215,6 +272,7 @@ SpotifyWidget.prototype = {
         this._container.add_actor(this._controlsBox);
         this._container.add_actor(this._progressContainer);
         this._container.add_actor(this._positionLabel);
+        this._container.add_actor(this._volumeBox);
         this._container.add_actor(this._openButton);
         this._container.add_actor(this._statusLabel);
         this._container.add_actor(this._launchButton);
@@ -279,6 +337,9 @@ SpotifyWidget.prototype = {
             `background-color: ${accent}; color: rgba(0,0,0,1); padding: 4px 12px; border-radius: 16px; font-size: ${Math.round(11 * scale)}px;`
         );
 
+        this._volumeIcon.set_style(`color: ${fg};`);
+        this._volumeLabel.set_style(`color: ${fg}; font-size: ${Math.round(10 * scale)}px; opacity: 0.6; min-width: 32px;`);
+
         this._albumArt.visible = this.showAlbumArt !== false;
     },
 
@@ -328,6 +389,7 @@ SpotifyWidget.prototype = {
         this._controlsBox.visible = running;
         this._progressContainer.visible = running;
         this._positionLabel.visible = running;
+        this._volumeBox.visible = running;
         this._openButton.visible = running;
         this._statusLabel.visible = !running;
         this._launchButton.visible = !running;
@@ -344,6 +406,9 @@ SpotifyWidget.prototype = {
         if (changed.PlaybackStatus) {
             this._updatePlaybackStatus(changed.PlaybackStatus.deep_unpack());
         }
+        if (changed.Volume) {
+            this._updateVolume(changed.Volume.deep_unpack());
+        }
     },
 
     _updateFromDBus: function() {
@@ -358,6 +423,11 @@ SpotifyWidget.prototype = {
             let status = this._playerProxy.PlaybackStatus;
             if (status) {
                 this._updatePlaybackStatus(status);
+            }
+
+            let volume = this._playerProxy.Volume;
+            if (volume !== undefined) {
+                this._updateVolume(volume);
             }
 
             this._setSpotifyRunning(true);
@@ -381,6 +451,9 @@ SpotifyWidget.prototype = {
         // Track length
         let length = this._getMetadataInt64(metadata, "mpris:length");
         this._currentTrackLength = length;
+
+        // Track ID (for SetPosition seek)
+        this._currentTrackId = this._getMetadataString(metadata, "mpris:trackid");
 
         // Album art
         let artUrl = this._getMetadataString(metadata, "mpris:artUrl");
@@ -514,11 +587,17 @@ SpotifyWidget.prototype = {
         let fraction = this._currentPosition / this._currentTrackLength;
         fraction = Math.max(0, Math.min(1, fraction));
 
-        let width = Math.round(fraction * 100);
         let accent = this.accentColor || "rgba(30, 215, 96, 1.0)";
-        this._progressBar.set_style(
-            `background-color: ${accent}; height: 4px; border-radius: 2px; width: ${width}%;`
-        );
+        let totalWidth = this._progressContainer.get_width();
+        if (totalWidth > 0) {
+            let fillWidth = Math.round(fraction * totalWidth);
+            this._progressBar.set_style(
+                `background-color: ${accent}; height: 4px; width: ${fillWidth}px;`
+            );
+            this._progressBg.set_style(
+                `background-color: rgba(255,255,255,0.15); height: 4px; width: ${totalWidth - fillWidth}px;`
+            );
+        }
 
         // Position text
         let posStr = this._formatTime(this._currentPosition);
@@ -559,6 +638,111 @@ SpotifyWidget.prototype = {
             this._playerProxy.PreviousSync();
         } catch (e) {
             global.logError("[SpotifyWidget] Previous failed: " + e.message);
+        }
+    },
+
+    // --- Seek ---
+
+    _onProgressClicked: function(actor, event) {
+        if (!this._playerProxy || this._currentTrackLength <= 0) return;
+
+        let [x] = event.get_coords();
+        let [actorX] = actor.get_transformed_position();
+        let actorWidth = actor.get_width();
+        if (actorWidth <= 0) return;
+
+        let fraction = Math.max(0, Math.min(1, (x - actorX) / actorWidth));
+        let targetPosition = Math.floor(fraction * this._currentTrackLength);
+
+        try {
+            if (this._currentTrackId) {
+                this._playerProxy.SetPositionSync(this._currentTrackId, targetPosition);
+            } else {
+                // Fallback: relative seek
+                let offset = targetPosition - this._currentPosition;
+                this._playerProxy.SeekSync(offset);
+            }
+            this._currentPosition = targetPosition;
+            this._updateProgressBar();
+        } catch (e) {
+            global.logError("[SpotifyWidget] Seek failed: " + e.message);
+        }
+    },
+
+    // --- Volume ---
+
+    _updateVolume: function(volume) {
+        this._currentVolume = Math.max(0, Math.min(1, volume));
+        this._updateVolumeUI();
+    },
+
+    _updateVolumeUI: function() {
+        let pct = Math.round(this._currentVolume * 100);
+        this._volumeLabel.set_text(pct + "%");
+
+        let totalWidth = this._volumeSliderContainer.get_width();
+        if (totalWidth > 0) {
+            let fillWidth = Math.round(this._currentVolume * totalWidth);
+            let accent = this.accentColor || "rgba(30, 215, 96, 1.0)";
+            this._volumeSliderFill.set_style(
+                `background-color: ${accent}; height: 4px; width: ${fillWidth}px;`
+            );
+            this._volumeSliderBg.set_style(
+                `background-color: rgba(255,255,255,0.15); height: 4px; width: ${totalWidth - fillWidth}px;`
+            );
+        }
+
+        // Update icon
+        let iconName;
+        if (this._currentVolume <= 0) {
+            iconName = "audio-volume-muted-symbolic";
+        } else if (this._currentVolume < 0.33) {
+            iconName = "audio-volume-low-symbolic";
+        } else if (this._currentVolume < 0.66) {
+            iconName = "audio-volume-medium-symbolic";
+        } else {
+            iconName = "audio-volume-high-symbolic";
+        }
+        this._volumeIcon.set_icon_name(iconName);
+    },
+
+    _onVolumeClicked: function(actor, event) {
+        if (!this._playerProxy) return;
+
+        let [x] = event.get_coords();
+        let [actorX] = actor.get_transformed_position();
+        let actorWidth = actor.get_width();
+        if (actorWidth <= 0) return;
+
+        let volume = Math.max(0, Math.min(1, (x - actorX) / actorWidth));
+        this._setVolume(volume);
+    },
+
+    _onVolumeScroll: function(actor, event) {
+        if (!this._playerProxy) return;
+
+        let direction = event.get_scroll_direction();
+        let step = 0.05;
+        let volume = this._currentVolume;
+
+        if (direction === Clutter.ScrollDirection.UP) {
+            volume = Math.min(1, volume + step);
+        } else if (direction === Clutter.ScrollDirection.DOWN) {
+            volume = Math.max(0, volume - step);
+        } else {
+            return;
+        }
+
+        this._setVolume(volume);
+    },
+
+    _setVolume: function(volume) {
+        try {
+            this._playerProxy.Volume = volume;
+            this._currentVolume = volume;
+            this._updateVolumeUI();
+        } catch (e) {
+            global.logError("[SpotifyWidget] Volume set failed: " + e.message);
         }
     },
 
