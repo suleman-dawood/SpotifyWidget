@@ -441,16 +441,10 @@ SpotifyWidget.prototype = {
     },
 
     _setSpotifyRunning: function(running) {
-        if (!running && !this._killed && !this._isRelaunching) {
-            // Auto-relaunch Spotify hidden (only if not manually killed)
-            this._isRelaunching = true;
-            this._trackTitle.set_text("Launching Spotify...");
-            this._trackArtist.set_text("");
-            this._onLaunchSpotify();
-            Mainloop.timeout_add(8000, () => {
-                this._isRelaunching = false;
-                return GLib.SOURCE_REMOVE;
-            });
+        // No auto-relaunch — user controls launch via play or spotify icon
+        if (!running) {
+            this._trackTitle.set_text("Not Playing");
+            this._trackArtist.set_text("Click play to start");
         }
     },
 
@@ -732,7 +726,11 @@ SpotifyWidget.prototype = {
     },
 
     _onPlayPause: function() {
-        this._killed = false;
+        // If Spotify not running, launch it first
+        if (!this._playerProxy) {
+            this._onLaunchSpotify();
+            return;
+        }
         this._mprisCommand("PlayPause");
     },
 
