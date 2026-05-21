@@ -87,8 +87,8 @@ launch_spotify() {
 find_all_spotify_windows() {
     # Collect from multiple sources — Flatpak Spotify creates windows under different classes
     {
-        xdotool search --class spotify 2>/dev/null
-        wmctrl -l 2>/dev/null | grep -i "Spotify" | grep -v "SpotifyWidget" | awk '{print $1}'
+        xdotool search --class spotify 2>/dev/null || true
+        wmctrl -l 2>/dev/null | grep -i "Spotify" | grep -v "SpotifyWidget" | awk '{print $1}' || true
     } | sort -u
 }
 
@@ -112,28 +112,16 @@ hide_spotify_window() {
 
 show_spotify_window() {
     local found=0
-    # Remap saved windows (unmapped windows can't be found by search)
+    # Remap all saved windows (unmapped windows can't be found by search)
     if [[ -f /tmp/.spotify-widget-wids ]]; then
-        while read -r wid; do
-            [[ -z "$wid" ]] && continue
-            if xprop -id "$wid" >/dev/null 2>&1; then
-                xdotool windowmap "$wid" 2>/dev/null
-                xdotool windowactivate "$wid" 2>/dev/null
-                xdotool windowfocus "$wid" 2>/dev/null
-                xdotool windowraise "$wid" 2>/dev/null
-                found=1
-            fi
-        done < /tmp/.spotify-widget-wids
-    fi
-
-    # Fallback: search for any visible spotify window
-    if [[ $found -eq 0 ]]; then
-        local wid
-        wid=$(find_spotify_window)
-        if [[ -n "$wid" ]]; then
-            xdotool windowactivate "$wid" 2>/dev/null
-            found=1
-        fi
+        for wid in $(cat /tmp/.spotify-widget-wids); do
+            xdotool windowmap "$wid" 2>/dev/null && found=1
+        done
+        # Activate the main window (last one is usually the app window)
+        local main_wid
+        main_wid=$(tail -1 /tmp/.spotify-widget-wids)
+        xdotool windowactivate "$main_wid" 2>/dev/null
+        xdotool windowraise "$main_wid" 2>/dev/null
     fi
 
     if [[ $found -eq 1 ]]; then
@@ -142,26 +130,6 @@ show_spotify_window() {
         log "WARN: Could not find Spotify window to show."
         return 1
     fi
-}
-
-# Watch mode: monitor Spotify window, re-hide if it gets closed
-# This keeps Spotify running in background — closing the window just hides it
-watch_and_guard() {
-    log "Watching Spotify window (close = hide)..."
-    while is_spotify_running; do
-        local wid
-        wid=$(find_spotify_window)
-        if [[ -z "$wid" ]] && is_spotify_running; then
-            # Window gone but process alive — window was closed
-            # Wait for it to potentially reappear (some apps recreate windows)
-            sleep 1
-            if [[ -z "$(find_spotify_window)" ]] && is_spotify_running; then
-                log "Spotify window closed but still running — music continues."
-            fi
-        fi
-        sleep 2
-    done
-    log "Spotify process exited."
 }
 
 case "${1:-launch}" in
@@ -175,8 +143,20 @@ case "${1:-launch}" in
     hide)
         hide_spotify_window
         ;;
-    watch)
-        watch_and_guard
+    toggle)
+        # File exists + running = hidden → show
+        # Running + no file = visible → hide
+        # Not running = launch (clean stale file)
+        if ! is_spotify_running; then
+            rm -f /tmp/.spotify-widget-wids
+            check_dependencies
+            launch_spotify
+        elif [[ -f /tmp/.spotify-widget-wids ]]; then
+            show_spotify_window
+            rm -f /tmp/.spotify-widget-wids
+        else
+            hide_spotify_window
+        fi
         ;;
     status)
         if is_spotify_running; then
@@ -186,7 +166,7 @@ case "${1:-launch}" in
         fi
         ;;
     *)
-        echo "Usage: $0 {launch|show|hide|watch|status}"
+        echo "Usage: $0 {launch|show|hide|toggle|status}"
         exit 1
         ;;
 esac
