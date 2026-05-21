@@ -71,8 +71,21 @@ launch_spotify() {
     fi
     disown
 
-    log "Waiting ${HIDE_DELAY}s for Spotify window..."
-    sleep "$HIDE_DELAY"
+    # Retry hiding until window appears (Flatpak can be slow)
+    local attempts=0
+    while [[ $attempts -lt 10 ]]; do
+        sleep 1
+        local wids
+        wids=$(find_all_spotify_windows)
+        if [[ -n "$wids" ]]; then
+            log "Found Spotify window after $((attempts+1))s."
+            sleep 1  # Let it fully render
+            hide_spotify_window
+            return 0
+        fi
+        attempts=$((attempts + 1))
+    done
+    log "WARN: Spotify window not found after 10s."
 }
 
 find_all_spotify_windows() {
@@ -159,7 +172,6 @@ case "${1:-launch}" in
     launch)
         check_dependencies
         launch_spotify
-        hide_spotify_window
         ;;
     show)
         show_spotify_window

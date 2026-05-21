@@ -95,7 +95,7 @@ SpotifyWidget.prototype = {
         this._currentTrackId = "";
         this._isSeeking = false;
         this._isRelaunching = false;
-        this._killed = false;
+        this._killed = true;  // Don't auto-launch on startup — wait for user interaction
 
         this._bindSettings();
         this._buildUI();
